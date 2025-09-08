@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "787194948580",
+    "project_id": "traductorpamiwa",
+    "storage_bucket": "traductorpamiwa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:787194948580:android:f8da60799bb9a49b8a35f1",
+        "android_client_info": {
+          "package_name": "com.sena.sennova.cubeoTranslator"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0q2JreQjjWfkMBuzjPQYEG5ioPPu3_JE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
