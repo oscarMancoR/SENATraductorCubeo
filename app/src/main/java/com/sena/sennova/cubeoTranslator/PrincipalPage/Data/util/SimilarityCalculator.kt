@@ -2,6 +2,8 @@ package com.sena.sennova.cubeoTranslator.PrincipalPage.Data.util
 
 import android.content.ContentValues.TAG
 import android.util.Log
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.util.TextUtils.cleanForComparison
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.util.TextUtils.extractMeaningfulWords
 import jakarta.inject.Inject
 import jakarta.inject.Singleton
 import kotlin.math.max
@@ -10,7 +12,7 @@ import kotlin.math.max
 //Calculadora de similitud entre textos
 // Usa múltiples algoritmos para determinar qué tan similares son dos oraciones
 
-@Singleton
+
 class SimilarityCalculator @Inject constructor() {
     companion object {
         private const val TAG = "SimilarityCalculator"

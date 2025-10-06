@@ -10,9 +10,9 @@ enum class TranslationDirection {
 }
 
 enum class TranslationMethod {
-    EXACT_MATCH,        // Coincidencia exacta en corpus
-    SIMILAR_SENTENCE,   // Oración similar encontrada
-    WORD_BY_WORD,      // Traducción palabra por palabra
+    COINCIDENCIA_EXACTA,        // Coincidencia exacta en corpus
+    ORACION_SIMILAR,   // Oración similar encontrada
+    PALABRA_POR_PALABRA,      // Traducción palabra por palabra
     HYBRID_AI,         // IA con contexto del corpus
     USER_CORRECTION,   // Corrección previa del usuario
     CONTEXTUAL_SEARCH  // Búsqueda contextual en corpus
@@ -36,7 +36,7 @@ enum class ValidationStatus {
 data class WordModel(
     @PrimaryKey val id: String = "",
     @PropertyName("palabra_espanol") val palabraEspanol: String = "",
-    @PropertyName("palabra_cubeo") val palabraCubeo: String = "",
+    @PropertyName("palabra_pamiwa") val palabraPamiwa: String = "",
     val categoria: String = "", // sustantivo, verbo, adjetivo, etc.
     val frecuencia: Int = 0,
     val confianza: Float = 1.0f,
@@ -49,7 +49,7 @@ data class WordModel(
 data class SentenceModel(
     @PrimaryKey val id: String = "",
     @PropertyName("oracion_espanol") val oracionEspanol: String = "",
-    @PropertyName("oracion_cubeo") val oracionCubeo: String = "",
+    @PropertyName("oracion_pamiwa") val oracionPamiwa: String = "",
     val dificultad: String = "medium", // easy, medium, hard
     val categoria: String = "", // saludo, pregunta, afirmacion, etc.
     val tags: List<String> = emptyList(),
@@ -66,7 +66,7 @@ data class UserCorrectionModel(
     val traduccionIA: String = "",
     val correccionUsuario: String = "",
     val direccion: TranslationDirection = TranslationDirection.ES_TO_PAMIWA,
-    val metodoOriginal: TranslationMethod = TranslationMethod.WORD_BY_WORD,
+    val metodoOriginal: TranslationMethod = TranslationMethod.PALABRA_POR_PALABRA,
     val confianzaOriginal: Float = 0f,
 
     // CAMPOS PARA VALIDACIÓN HÍBRIDA
@@ -156,7 +156,7 @@ data class TranslationCacheModel(
     val textoOriginal: String = "",
     val textoTraducido: String = "",
     val direccion: TranslationDirection = TranslationDirection.ES_TO_PAMIWA,
-    val metodo: TranslationMethod = TranslationMethod.WORD_BY_WORD,
+    val metodo: TranslationMethod = TranslationMethod.PALABRA_POR_PALABRA,
     val confianza: Float = 0f,
     val timestamp: Long = System.currentTimeMillis(),
     val expiraEn: Long = System.currentTimeMillis() + (24 * 60 * 60 * 1000) // 24 horas
@@ -173,7 +173,7 @@ fun com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.WordModel.toWordBr
 ): WordBreakdown {
     return WordBreakdown(
         palabraOriginal = palabraOriginal,
-        palabraTraducida = if (esDireccionEspanolAPamiwa) this.palabraCubeo else this.palabraEspanol,
+        palabraTraducida = if (esDireccionEspanolAPamiwa) this.palabraPamiwa else this.palabraEspanol,
         categoria = this.categoria,
         confianza = this.confianza,
         encontradaEnCorpus = true
