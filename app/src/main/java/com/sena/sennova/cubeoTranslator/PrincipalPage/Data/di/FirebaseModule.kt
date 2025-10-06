@@ -3,6 +3,10 @@ package com.sena.sennova.cubeoTranslator.PrincipalPage.Data.di
 import android.content.Context
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.repository.TranslationRepository
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.repository.implementar.TranslationRepositoryImpl
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.util.SimilarityCalculator
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -30,4 +34,20 @@ object FirebaseModule {
     fun provideFirebaseFirestore(firebaseApp: FirebaseApp): FirebaseFirestore {
         return FirebaseFirestore.getInstance(firebaseApp)
     }
+    @Provides
+    @Singleton
+    fun provideSimilarityCalculator(): SimilarityCalculator {
+        return SimilarityCalculator()
+    }
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class TranslationRepositoryModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindTranslationRepository(
+        translationRepositoryImpl: TranslationRepositoryImpl
+    ): TranslationRepository
 }

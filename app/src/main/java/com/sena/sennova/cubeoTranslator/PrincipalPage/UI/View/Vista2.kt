@@ -328,7 +328,7 @@ fun BotonTecla(
             contentColor = Color.Black
         )
     ) {
-        Text(text = letra, fontSize = 30.sp)
+        Text(text = "h", fontSize = 50.sp)
     }
 }
 

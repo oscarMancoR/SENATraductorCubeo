@@ -172,7 +172,7 @@ object TextUtils {
             "ɨ",
             "kh", "th", "ph",
             "wa", "wi", "we", "wo", "wu",
-            "ya", "ye", "yi", "yo", "yu",
+            "~",
             "ã", "ẽ", "ĩ", "õ", "ũ"
         )
 
@@ -284,9 +284,8 @@ object TextUtils {
         )
 
         val pamiwaQuestionWords = listOf(
-            "jawe", "jáwé",
-            "waga", "wagá",
-            "kari", "karí"
+            "yé", "aipé",
+            "ari~"
         )
 
         val hasQuestionMark = this.contains("?")
@@ -302,10 +301,10 @@ object TextUtils {
     fun String.isGreeting(): Boolean {
         val lowerText = this.lowercase().removeAccents()
 
-        val spanishGreetings = listOf("hola", "buenos", "buenas", "saludos", "hi", "hello")
+        val spanishGreetings = listOf("hola", "buenos", "buenas", "saludos")
         val pamiwaGreetings = listOf(
-            "táchi", "tachi",
-            "kóba", "koba"
+            "aru", "Coedakíri~",
+            "Coedakori~"
         )
 
         val allGreetings = spanishGreetings + pamiwaGreetings

@@ -4,6 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.dagger.hilt.android")
     id("kotlin-kapt")
+    id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
 }
 
@@ -81,7 +82,9 @@ dependencies {
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
-    kapt(libs.room.compiler)
+   //kapt(libs.room.compiler)
+    ksp(libs.room.compiler)
+
 
     // Hilt
     implementation(libs.hilt.android)

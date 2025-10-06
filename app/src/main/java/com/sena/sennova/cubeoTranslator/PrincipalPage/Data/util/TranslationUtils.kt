@@ -53,9 +53,9 @@ object TranslationUtils {
         isExpertValidated: Boolean = false
     ): Float {
         val baseConfidence = when (method) {
-            TranslationMethod.EXACT_MATCH -> 0.95f
-            TranslationMethod.SIMILAR_SENTENCE -> similarity ?: 0.8f
-            TranslationMethod.WORD_BY_WORD -> {
+            TranslationMethod.COINCIDENCIA_EXACTA -> 0.95f
+            TranslationMethod.ORACION_SIMILAR -> similarity ?: 0.8f
+            TranslationMethod.PALABRA_POR_PALABRA -> {
                 if (totalWords == 0) 0.5f
                 else (wordsFoundInCorpus.toFloat() / totalWords) * 0.8f
             }
@@ -186,7 +186,7 @@ object TranslationUtils {
                 suggestions.add("Considera revisar la traducción, la confianza es baja")
             }
 
-            response.metodo == TranslationMethod.WORD_BY_WORD && response.desglosePalabras.any { !it.encontradaEnCorpus } -> {
+            response.metodo == TranslationMethod.PALABRA_POR_PALABRA && response.desglosePalabras.any { !it.encontradaEnCorpus } -> {
                 suggestions.add("Algunas palabras no se encontraron en el corpus")
             }
 

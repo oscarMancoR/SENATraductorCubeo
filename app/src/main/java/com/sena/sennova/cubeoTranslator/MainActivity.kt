@@ -22,8 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.firebase.FirebaseApp
 import com.sena.sennova.cubeoTranslator.Navigation.NavigationScreen
+import com.sena.sennova.cubeoTranslator.PrincipalPage.UI.ViewModel.EnhancedTranslationViewModel
+import com.sena.sennova.cubeoTranslator.PrincipalPage.UI.ViewModel.InitializationViewModel
 import com.sena.sennova.cubeoTranslator.PrincipalPage.UI.ViewModel.PrincipalPageViewModel
 import com.sena.sennova.cubeoTranslator.ui.theme.CubeoTraslatorTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -33,7 +36,8 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private val principalPageViewModel: PrincipalPageViewModel by viewModels()
+    private val principalPageViewModel: EnhancedTranslationViewModel by viewModels()
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
