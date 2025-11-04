@@ -1,9 +1,11 @@
 package com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local
 
 
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.CacheTraduccionDao
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.OracionDao
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.PalabraDao
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.SyncMetadataDao
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.CacheTraduccionApiEntity
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.OracionEntity
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.PalabraEntity
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.SyncMetadataEntity
@@ -15,7 +17,8 @@ import javax.inject.Singleton
 class LocalDataSource @Inject constructor(
     private val palabraDao: PalabraDao,
     private val oracionDao: OracionDao,
-    private val syncMetadataDao: SyncMetadataDao
+    private val syncMetadataDao: SyncMetadataDao,
+    private val cacheTraduccionDao: CacheTraduccionDao
 ) {
 
     // ========== PALABRAS ==========
@@ -86,4 +89,26 @@ class LocalDataSource @Inject constructor(
         palabraDao.deleteAll()
         oracionDao.deleteAll()
     }
+
+    // NUEVOS MÉTODOS para caché de API
+    suspend fun buscarEnCacheApi(
+        texto: String,
+        direccion: String
+    ): CacheTraduccionApiEntity? {
+        return cacheTraduccionDao.buscarEnCache(
+            texto.lowercase().trim(),
+            direccion
+        )
+    }
+
+    suspend fun guardarEnCacheApi(cache: CacheTraduccionApiEntity): Long {
+        return cacheTraduccionDao.insertarCache(cache)
+    }
+
+    suspend fun limpiarCacheExpirado(): Int {
+        return cacheTraduccionDao.limpiarCacheExpirado()
+    }
+
+
+
 }

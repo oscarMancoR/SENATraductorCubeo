@@ -2,6 +2,7 @@ package com.sena.sennova.cubeoTranslator.PrincipalPage.Data.di
 
 import android.content.Context
 import androidx.room.Room
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.CacheTraduccionDao
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.OracionDao
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.PalabraDao
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.Dao.SyncMetadataDao
@@ -17,6 +18,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
+
+    @Provides
+    @Singleton
+    fun provideCacheTraduccionDao(database: TranslationDatabase): CacheTraduccionDao {
+        return database.cacheTraduccionDao()
+    }
 
     @Provides
     @Singleton
@@ -49,4 +56,6 @@ object DatabaseModule {
     fun provideSyncMetadataDao(database: TranslationDatabase): SyncMetadataDao {
         return database.syncMetadataDao()
     }
+
+
 }
