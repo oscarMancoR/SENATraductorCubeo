@@ -9,6 +9,7 @@ import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.repository.*
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.util.*
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.*
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.LocalDataSource
+import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.CacheTraduccionApiEntity
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.toSentenceModel
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.toWordModel
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,8 @@ class TranslationRepositoryImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val localDataSource: LocalDataSource,
     private val syncManager: SyncManager,
-    private val similarityCalculator: SimilarityCalculator
+    private val similarityCalculator: SimilarityCalculator,
+    private val mBartApiService: MBartApiService
 ) : TranslationRepository {
 
     companion object {
@@ -80,12 +82,181 @@ class TranslationRepositoryImpl @Inject constructor(
             }
         }
     }
+    override suspend fun translateText(
+        texto: String,
+        direccion: TranslationDirection,
+        modo: TranslationMode
+    ): Result<TranslationResponse> = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
 
+        try {
+            val textoLimpio = texto.trim()
+            if (textoLimpio.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("Texto vacío"))
+            }
+
+            Log.d(TAG, "Traduciendo: '$textoLimpio' (${direccion.name})")
+
+            val esPalabra = textoLimpio.split(" ").size == 1
+
+            // 1. Verificar correcciones del usuario (Firebase)
+            getUserCorrection(textoLimpio, direccion)?.let { correction ->
+                return@withContext Result.success(
+                    createResponseFromCorrection(correction, textoLimpio, startTime)
+                )
+            }
+
+            // 2. Buscar coincidencia exacta en Room
+            val exactMatch = findExactMatch(textoLimpio, direccion)
+            if (exactMatch != null) {
+                return@withContext Result.success(
+                    createResponseFromExactMatch(exactMatch, textoLimpio, direccion, startTime)
+                )
+            }
+
+            // 3. Buscar en caché de API (Room)
+            val cacheApi = localDataSource.buscarEnCacheApi(textoLimpio, direccion.name)
+            if (cacheApi != null) {
+                Log.d(TAG, "✅ Encontrado en caché de API")
+                return@withContext Result.success(
+                    createResponseFromCacheApi(cacheApi, textoLimpio, direccion, startTime)
+                )
+            }
+
+            // 4. SI ES PALABRA: Buscar en Room o usar API
+            if (esPalabra) {
+                val palabraEntity = if (direccion == TranslationDirection.ES_TO_PAMIWA) {
+                    localDataSource.findPalabraByEspanol(textoLimpio.lowercase())
+                } else {
+                    localDataSource.findPalabraByPamiwa(textoLimpio.lowercase())
+                }
+
+                if (palabraEntity != null) {
+                    // Palabra encontrada en Room
+                    val traduccion = if (direccion == TranslationDirection.ES_TO_PAMIWA)
+                        palabraEntity.palabra_pamiwa else palabraEntity.palabra_espanol
+
+                    return@withContext Result.success(
+                        TranslationResponse(
+                            textoOriginal = textoLimpio,
+                            traduccionNatural = traduccion,
+                            direccion = direccion,
+                            metodo = TranslationMethod.COINCIDENCIA_EXACTA,
+                            confianza = palabraEntity.confianza,
+                            tiempoRespuesta = System.currentTimeMillis() - startTime
+                        )
+                    )
+                } else {
+                    // Palabra NO encontrada → Llamar API
+                    Log.d(TAG, "🌐 Palabra no encontrada, llamando API mBART...")
+                    return@withContext traducirConApi(textoLimpio, direccion, true, startTime)
+                }
+            }
+
+            // 5. SI ES ORACIÓN: Buscar similares en Room
+            val similarSentences = findSimilarSentences(textoLimpio, direccion, limit = 3)
+            if (similarSentences.isNotEmpty()) {
+                val bestMatch = similarSentences.first()
+                val similarity = calculateSimilarity(textoLimpio, bestMatch, direccion)
+
+                if (similarity >= SIMILARITY_THRESHOLD) {
+                    return@withContext Result.success(
+                        createResponseFromSimilar(
+                            bestMatch, textoLimpio, direccion, similarity, startTime, similarSentences
+                        )
+                    )
+                }
+            }
+
+            // 6. Oración NO encontrada → Llamar API
+            Log.d(TAG, "🌐 Oración no encontrada, llamando API mBART...")
+            traducirConApi(textoLimpio, direccion, false, startTime)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en translateText", e)
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun traducirConApi(
+        texto: String,
+        direccion: TranslationDirection,
+        esPalabra: Boolean,
+        startTime: Long
+    ): Result<TranslationResponse> = withContext(Dispatchers.IO) {
+        try {
+            val idiomaOrigen = if (direccion == TranslationDirection.ES_TO_PAMIWA) "es" else "pam"
+            val idiomaDestino = if (direccion == TranslationDirection.ES_TO_PAMIWA) "pam" else "es"
+
+            val request = TraduccionApiRequest(
+                texto = texto,
+                idioma_origen = idiomaOrigen,
+                idioma_destino = idiomaDestino
+            )
+
+            Log.d(TAG, "📡 Llamando API: $request")
+
+            val response = mBartApiService.traducir(request)
+
+            if (response.isSuccessful && response.body() != null) {
+                val apiResponse = response.body()!!
+
+                Log.d(TAG, "✅ API respondió: ${apiResponse.traduccion}")
+
+                // Guardar en caché de Room para futuras consultas
+                val cacheEntity = CacheTraduccionApiEntity(
+                    textoOriginal = texto.lowercase().trim(),
+                    traduccion = apiResponse.traduccion,
+                    direccion = direccion.name,
+                    esPalabra = esPalabra,
+                    confianza = apiResponse.confianza ?: 0.75f,
+                    origen = "API_MBART"
+                )
+
+                localDataSource.guardarEnCacheApi(cacheEntity)
+                Log.d(TAG, "💾 Guardado en caché local")
+
+                Result.success(
+                    TranslationResponse(
+                        textoOriginal = texto,
+                        traduccionNatural = apiResponse.traduccion,
+                        direccion = direccion,
+                        metodo = TranslationMethod.HYBRID_AI,
+                        confianza = apiResponse.confianza ?: 0.75f,
+                        tiempoRespuesta = System.currentTimeMillis() - startTime
+                    )
+                )
+            } else {
+                Log.e(TAG, "❌ Error de API: ${response.code()} - ${response.message()}")
+                Result.failure(Exception("Error de API: ${response.message()}"))
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Excepción llamando API", e)
+            Result.failure(e)
+        }
+    }
+
+    private fun createResponseFromCacheApi(
+        cache: CacheTraduccionApiEntity,
+        originalText: String,
+        direction: TranslationDirection,
+        startTime: Long
+    ): TranslationResponse {
+        return TranslationResponse(
+            textoOriginal = originalText,
+            traduccionNatural = cache.traduccion,
+            direccion = direction,
+            metodo = TranslationMethod.HYBRID_AI,
+            confianza = cache.confianza,
+            tiempoRespuesta = System.currentTimeMillis() - startTime
+        )
+    }
     // =============================================================================
     // TRADUCCIÓN PRINCIPAL - AHORA USA ROOM
     // =============================================================================
 
-    override suspend fun translateText(
+   /* override suspend fun translateText(
         texto: String,
         direccion: TranslationDirection,
         modo: TranslationMode
@@ -138,7 +309,7 @@ class TranslationRepositoryImpl @Inject constructor(
             Log.e(TAG, "Error en translateText", e)
             Result.failure(e)
         }
-    }
+    }*/
 
     // =============================================================================
     // BÚSQUEDA EN ROOM (RÁPIDO - OFFLINE)
