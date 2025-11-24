@@ -34,29 +34,52 @@ enum class ValidationStatus {
 // Modelo para palabras individuales
 @Entity(tableName = "expert_words")
 data class WordModel(
-    @PrimaryKey val id: String = "",
-    @PropertyName("palabra_espanol") val palabraEspanol: String = "",
-    @PropertyName("palabra_pamiwa") val palabraPamiwa: String = "",
-    val categoria: String = "", // sustantivo, verbo, adjetivo, etc.
-    val frecuencia: Int = 0,
+    val id: String = "",
+    val palabraEspanol: String = "",
+    val palabraPamie: String = "",  // 🔴 CAMBIADO de palabraPamiwa
+    val significado: String = "",
+    val tipoPalabra: String = "",
+    val activo: Boolean = true,
+    val fuente: String = "",
     val confianza: Float = 1.0f,
-    @PropertyName("expert_validated") val expertValidated: Boolean = true,
-    @PropertyName("created_at") val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 // Modelo para oraciones completas
 @Entity(tableName = "expert_sentences")
 data class SentenceModel(
-    @PrimaryKey val id: String = "",
-    @PropertyName("oracion_espanol") val oracionEspanol: String = "",
-    @PropertyName("oracion_pamiwa") val oracionPamiwa: String = "",
-    val dificultad: String = "medium", // easy, medium, hard
-    val categoria: String = "", // saludo, pregunta, afirmacion, etc.
-    val tags: List<String> = emptyList(),
+    val id: String = "",
+    val idBase: String = "",
+    val familia: String = "",
+    val genero: String = "neutro",
+    val activo: Boolean = true,
+
+    // Oración principal (según tiempo seleccionado)
+    val oracionEspanol: String = "",
+    val oracionPamie: String = "",  //
+
+    // Todas las variaciones temporales
+    val espanolPresente: String = "",
+    val pamiePresente: String = "",
+    val espanolPasado: String = "",
+    val pamiePasado: String = "",
+    val espanolFuturo: String = "",
+    val pamieFuturo: String = "",
+
+    // Metadata
+    val palabrasClave: List<String> = emptyList(),
+    val variacionesDisponibles: List<String> = emptyList(),
+    val totalVariaciones: Int = 1,
+    val fuente: String = "",
     val confianza: Float = 1.0f,
-    @PropertyName("expert_validated") val expertValidated: Boolean = true,
-    @PropertyName("created_at") val createdAt: Long = System.currentTimeMillis()
-)
+    val createdAt: Long = System.currentTimeMillis(),
+
+    // Para búsqueda por similitud
+    val similarity: Float = 0f
+) {
+    // Propiedades de compatibilidad (para código existente que use oracionPamiwa)
+    val oracionPamiwa: String get() = oracionPamie
+}
 
 // Modelo para correcciones del usuario (SISTEMA HÍBRIDO)
 @Entity(tableName = "user_corrections")
@@ -173,8 +196,8 @@ fun com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.WordModel.toWordBr
 ): WordBreakdown {
     return WordBreakdown(
         palabraOriginal = palabraOriginal,
-        palabraTraducida = if (esDireccionEspanolAPamiwa) this.palabraPamiwa else this.palabraEspanol,
-        categoria = this.categoria,
+        palabraTraducida = if (esDireccionEspanolAPamiwa) this.palabraPamie else this.palabraEspanol,
+        categoria = this.tipoPalabra,
         confianza = this.confianza,
         encontradaEnCorpus = true
     )

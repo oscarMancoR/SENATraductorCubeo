@@ -12,7 +12,6 @@ import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.Sy
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
-
 @Singleton
 class LocalDataSource @Inject constructor(
     private val palabraDao: PalabraDao,
@@ -27,34 +26,67 @@ class LocalDataSource @Inject constructor(
         return palabraDao.findByEspanol(palabra.lowercase().trim())
     }
 
-    suspend fun findPalabraByPamiwa(palabra: String): PalabraEntity? {
-        return palabraDao.findByPamiwa(palabra.lowercase().trim())
+    suspend fun findPalabraByPamie(palabra: String): PalabraEntity? {
+        return palabraDao.findByPamie(palabra.lowercase().trim())
     }
 
     suspend fun searchPalabrasEspanol(query: String): List<PalabraEntity> {
         return palabraDao.searchByEspanol(query.lowercase().trim())
     }
 
+    suspend fun searchPalabrasPamie(query: String): List<PalabraEntity> {
+        return palabraDao.searchByPamie(query.lowercase().trim())
+    }
+
     suspend fun insertPalabras(palabras: List<PalabraEntity>) {
         palabraDao.insertAll(palabras)
+    }
+
+    suspend fun clearPalabras() {
+        palabraDao.deleteAll()
     }
 
     suspend fun getPalabrasCount(): Int = palabraDao.getCount()
 
     fun getPalabrasCountFlow(): Flow<Int> = palabraDao.getCountFlow()
 
+    suspend fun getAllPalabrasActivas(): List<PalabraEntity> {
+        return palabraDao.getAllActive()
+    }
+
     // ========== ORACIONES ==========
 
     suspend fun findOracionExactaEspanol(oracion: String): OracionEntity? {
-        return oracionDao.findExactByEspanol(oracion.lowercase().trim())
+        return oracionDao.findExactByEspanol(oracion.trim())
     }
 
-    suspend fun findOracionExactaPamiwa(oracion: String): OracionEntity? {
-        return oracionDao.findExactByPamiwa(oracion.lowercase().trim())
+    suspend fun findOracionExactaPamie(oracion: String): OracionEntity? {
+        return oracionDao.findExactByPamie(oracion.trim())
     }
 
-    suspend fun searchOracionesByKeyword(keyword: String): List<OracionEntity> {
-        return oracionDao.searchByKeywordEspanol(keyword.lowercase().trim())
+    // Busca en todas las variaciones temporales (presente, pasado, futuro)
+    suspend fun findOracionByEspanolAllTiempos(oracion: String): OracionEntity? {
+        return oracionDao.findExactByEspanolAllTiempos(oracion.trim())
+    }
+
+    suspend fun findOracionByPamieAllTiempos(oracion: String): OracionEntity? {
+        return oracionDao.findExactByPamieAllTiempos(oracion.trim())
+    }
+
+    suspend fun searchOracionesByKeywordEspanol(keyword: String): List<OracionEntity> {
+        return oracionDao.searchByKeywordEspanol(keyword.trim())
+    }
+
+    suspend fun searchOracionesByKeywordPamie(keyword: String): List<OracionEntity> {
+        return oracionDao.searchByKeywordPamie(keyword.trim())
+    }
+
+    suspend fun findOracionesByFamilia(familia: String): List<OracionEntity> {
+        return oracionDao.findByFamilia(familia)
+    }
+
+    suspend fun getAllFamilias(): List<String> {
+        return oracionDao.getAllFamilias()
     }
 
     suspend fun getAllOraciones(): List<OracionEntity> {
@@ -65,7 +97,13 @@ class LocalDataSource @Inject constructor(
         oracionDao.insertAll(oraciones)
     }
 
+    suspend fun clearOraciones() {
+        oracionDao.deleteAll()
+    }
+
     suspend fun getOracionesCount(): Int = oracionDao.getCount()
+
+    suspend fun getOracionesActiveCount(): Int = oracionDao.getActiveCount()
 
     fun getOracionesCountFlow(): Flow<Int> = oracionDao.getCountFlow()
 
@@ -83,14 +121,8 @@ class LocalDataSource @Inject constructor(
         return syncMetadataDao.getAllMetadataFlow()
     }
 
-    // ========== UTILIDADES ==========
+    // ========== CACHE API ==========
 
-    suspend fun clearAllData() {
-        palabraDao.deleteAll()
-        oracionDao.deleteAll()
-    }
-
-    // NUEVOS MÉTODOS para caché de API
     suspend fun buscarEnCacheApi(
         texto: String,
         direccion: String
@@ -101,7 +133,7 @@ class LocalDataSource @Inject constructor(
         )
     }
 
-    suspend fun guardarEnCacheApi(cache: CacheTraduccionApiEntity): Long {
+    suspend fun guardarCacheApi(cache: CacheTraduccionApiEntity): Long {
         return cacheTraduccionDao.insertarCache(cache)
     }
 
@@ -109,6 +141,46 @@ class LocalDataSource @Inject constructor(
         return cacheTraduccionDao.limpiarCacheExpirado()
     }
 
+    suspend fun obtenerTamanoCache(): Int {
+        return cacheTraduccionDao.obtenerTamanoCache()
+    }
+
+    suspend fun limpiarTodoCache(): Int {
+        return cacheTraduccionDao.limpiarTodoCache()
+    }
+
+    // ========== UTILIDADES ==========
+
+    suspend fun clearAllData() {
+        palabraDao.deleteAll()
+        oracionDao.deleteAll()
+        cacheTraduccionDao.limpiarTodoCache()
+    }
+
+    // En la sección de PALABRAS
+    suspend fun insertPalabra(palabra: PalabraEntity) {
+        palabraDao.insert(palabra)
+    }
+
+    // En la sección de ORACIONES
+    suspend fun insertOracion(oracion: OracionEntity) {
+        oracionDao.insert(oracion)
+    }
 
 
+    suspend fun getPalabraPorEspanol(palabraEspanol: String): PalabraEntity? {
+        return palabraDao.getPalabraPorEspanol(palabraEspanol)
+    }
+
+    suspend fun updatePalabra(palabra: PalabraEntity) {
+        palabraDao.updatePalabra(palabra)
+    }
+
+    suspend fun getOracionPorEspanol(espanolPresente: String): OracionEntity? {
+        return oracionDao.getOracionPorEspanol(espanolPresente)
+    }
+
+    suspend fun updateOracion(oracion: OracionEntity) {
+        oracionDao.update(oracion)
+    }
 }

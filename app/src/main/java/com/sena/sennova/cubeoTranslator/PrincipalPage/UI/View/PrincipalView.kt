@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 
@@ -47,10 +48,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
+
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,10 +60,9 @@ import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
+
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
@@ -71,27 +71,43 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.material3.IconButton
+
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.TranslationDirection
+import com.sena.sennova.cubeoTranslator.PrincipalPage.UI.ViewModel.AuthViewModel
 import com.sena.sennova.cubeoTranslator.PrincipalPage.UI.ViewModel.EnhancedTranslationViewModel
-import com.sena.sennova.cubeoTranslator.PrincipalPage.UI.ViewModel.KeyboardViewModel
+
 
 import com.sena.sennova.cubeoTranslator.R
 import kotlinx.coroutines.delay
 
-
-// nueva versión
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Divider
+import androidx.compose.material3.TextField
+import androidx.compose.material3.IconButton
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrincipalView(
     principalPageViewModel: EnhancedTranslationViewModel = hiltViewModel(),
-
+    authViewModel: AuthViewModel = hiltViewModel()
 ) {
+
+    val authState by authViewModel.uiState.collectAsState()
+
+
     val traducciones by principalPageViewModel.traducciones.collectAsState()
     val text by principalPageViewModel.text.collectAsState()
     val selector by principalPageViewModel.selector.collectAsState()
@@ -104,6 +120,12 @@ fun PrincipalView(
     val scrollState = rememberScrollState()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    // 🔴 NUEVO: Estados para menú y dialogs
+    var showMenu by remember { mutableStateOf(false) }
+    var showLoginDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var traduccionAEditar by remember { mutableStateOf("") }
 
     // Determinar qué teclado mostrar basado en la dirección de traducción
     val isPamiwaMode = uiState.direccion == TranslationDirection.PAMIWA_TO_ES
@@ -148,10 +170,114 @@ fun PrincipalView(
         }
     }
 
+    // 🔴 NUEVO: Dialog de Login
+    if (showLoginDialog) {
+        LoginDialog(
+            onDismiss = { showLoginDialog = false },
+            onLogin = { codigo ->
+                authViewModel.login(codigo)
+            },
+            isLoading = authState.cargando,
+            error = authState.error
+        )
+    }
+
+    // Cerrar dialog cuando login exitoso
+    LaunchedEffect(authState.estaLogueado) {
+        if (authState.estaLogueado) {
+            showLoginDialog = false
+        }
+    }
+
+    // 🔴 NUEVO: Dialog de Edición
+    if (showEditDialog) {
+        EditTranslationDialog(
+            textoOriginal = text,
+            traduccionActual = traduccionAEditar,
+            onDismiss = { showEditDialog = false },
+            onSave = { nuevaTraduccion, notas ->
+                MainScope().launch {
+                    authViewModel.guardarCorreccion(
+                        textoOriginal = text,
+                        traduccionIA = traduccionAEditar,
+                        traduccionCorrecta = nuevaTraduccion,
+                        direccion = uiState.direccion.name,
+                        notas = notas
+                    )
+                }
+                showEditDialog = false
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             // TopAppBar compacta siempre visible
             TopAppBar(
+                navigationIcon = {
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Menú"
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            if (authState.estaLogueado) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(
+                                                text = authState.usuario?.nombre ?: "",
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = authState.usuario?.rol ?: "Traductor",
+                                                fontSize = 12.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    },
+                                    onClick = { },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Person, contentDescription = null)
+                                    }
+                                )
+                                Divider()
+                                DropdownMenuItem(
+                                    text = { Text("Cerrar sesión") },
+                                    onClick = {
+                                        authViewModel.logout()
+                                        showMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.ExitToApp, contentDescription = null)
+                                    }
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Iniciar sesión") },
+                                    onClick = {
+                                        showLoginDialog = true
+                                        showMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Person, contentDescription = null)
+                                    }
+                                )
+                            }
+                            Divider()
+                            DropdownMenuItem(
+                                text = { Text("Acerca de") },
+                                onClick = { showMenu = false }
+                            )
+                        }
+                    }
+                },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -283,7 +409,8 @@ fun PrincipalView(
                 result = uiState.resultado,
                 onCorrection = { correctedText ->
                     principalPageViewModel.submitUserCorrection(correctedText)
-                }
+                },
+                puedeEditar = authViewModel.puedeEditar()
             )
 
             // Espacio adicional solo si no hay teclado personalizado
@@ -292,6 +419,99 @@ fun PrincipalView(
             }
         }
     }
+}
+
+// =============================================================================
+// DIALOGS
+// =============================================================================
+
+@Composable
+fun LoginDialog(
+    onDismiss: () -> Unit,
+    onLogin: (String) -> Unit,
+    isLoading: Boolean,
+    error: String?
+) {
+    var codigo by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Iniciar Sesión", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("Ingresa tu código de traductor:", fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = codigo,
+                    onValueChange = { codigo = it.uppercase() },
+                    label = { Text("Código") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading
+                )
+                if (error != null) {
+                    Text(error, color = Color.Red, fontSize = 12.sp)
+                }
+                if (isLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onLogin(codigo) }, enabled = codigo.isNotBlank() && !isLoading) {
+                Text("INGRESAR")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCELAR") }
+        }
+    )
+}
+
+@Composable
+fun EditTranslationDialog(
+    textoOriginal: String,
+    traduccionActual: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var nuevaTraduccion by remember { mutableStateOf(traduccionActual) }
+    var notas by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Corregir Traducción", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("Original:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(textoOriginal, modifier = Modifier.padding(bottom = 8.dp))
+                Text("IA tradujo:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(traduccionActual, color = Color.Red, modifier = Modifier.padding(bottom = 16.dp))
+                OutlinedTextField(
+                    value = nuevaTraduccion,
+                    onValueChange = { nuevaTraduccion = it },
+                    label = { Text("Traducción correcta") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = notas,
+                    onValueChange = { notas = it },
+                    label = { Text("Notas (opcional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(nuevaTraduccion, notas) },
+                enabled = nuevaTraduccion.isNotBlank() && nuevaTraduccion != traduccionActual
+            ) { Text("GUARDAR") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCELAR") }
+        }
+    )
 }
 
 @Composable
@@ -599,7 +819,9 @@ fun CompactErrorCard(error: String) {
 fun CompactBoxTextResult(
     traducciones: List<String>,
     result: com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.TranslationResponse?,
-    onCorrection: (String) -> Unit
+    onCorrection: (String) -> Unit,
+    puedeEditar : Boolean = false,
+    direccion: TranslationDirection = TranslationDirection.ES_TO_PAMIWA
 ) {
     var showCorrectionDialog by remember { mutableStateOf(false) }
     var correctionText by remember { mutableStateOf("") }
@@ -692,12 +914,12 @@ fun CompactBoxTextResult(
                 }
             }
 
-            // Botón de corrección compacto
-            if (traducciones.isNotEmpty()) {
+            // Botón de corrección compacto - Solo visible para traductores/admin
+            if (traducciones.isNotEmpty() && puedeEditar) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(4.dp), // Padding reducido
+                        .padding(4.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
@@ -709,12 +931,12 @@ fun CompactBoxTextResult(
                         Icon(
                             painter = painterResource(id = android.R.drawable.ic_menu_edit),
                             contentDescription = "Corregir",
-                            modifier = Modifier.size(12.dp) // Más pequeño
+                            modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             "Corregir",
-                            fontSize = 11.sp // Más pequeño
+                            fontSize = 11.sp
                         )
                     }
                 }
@@ -722,26 +944,61 @@ fun CompactBoxTextResult(
         }
     }
 
-    // Dialog de corrección
+    // Dialog de corrección con teclado Pamiwa completo
     if (showCorrectionDialog) {
+        val necesitaTecladoPamiwa = direccion == TranslationDirection.ES_TO_PAMIWA
+
         AlertDialog(
             onDismissRequest = { showCorrectionDialog = false },
             title = { Text("Corregir traducción", fontSize = 16.sp) },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
                         "Si la traducción no es correcta, puedes corregirla:",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
                     Spacer(modifier = Modifier.height(6.dp))
+
+                    // Campo de texto
                     OutlinedTextField(
                         value = correctionText,
                         onValueChange = { correctionText = it },
-                        label = { Text("Traducción corregida", fontSize = 12.sp) },
+                        label = {
+                            Text(
+                                if (necesitaTecladoPamiwa) "Corrección en Pamiwa" else "Corrección en Español",
+                                fontSize = 12.sp
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = TextStyle(fontSize = 14.sp)
+                        textStyle = TextStyle(fontSize = 14.sp),
+                        readOnly = necesitaTecladoPamiwa // Solo lectura si usa teclado Pamiwa
                     )
+
+                    // Teclado Pamiwa completo dentro del diálogo
+                    if (necesitaTecladoPamiwa) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        PamiwaKeyboard(
+                            onKeyPress = { char ->
+                                correctionText += char
+                            },
+                            onBackspace = {
+                                if (correctionText.isNotEmpty()) {
+                                    correctionText = correctionText.dropLast(1)
+                                }
+                            },
+                            onSpace = {
+                                correctionText += " "
+                            },
+                            onDone = {
+                                // No hacer nada aquí, el usuario usa el botón Guardar
+                            },
+                            modifier = Modifier.height(260.dp)
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -760,6 +1017,27 @@ fun CompactBoxTextResult(
                     Text("Cancelar", fontSize = 12.sp)
                 }
             }
+        )
+    }
+
+
+}
+@Composable
+private fun CharButton(
+    char: String,
+    onClick: () -> Unit
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(36.dp)
+            .padding(1.dp),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Text(
+            text = char,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
         )
     }
 }
