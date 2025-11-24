@@ -1,16 +1,21 @@
 package com.sena.sennova.cubeoTranslator.PrincipalPage.Data
 
+import android.content.Context
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.*
 import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.SyncMetadataEntity
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
-
 sealed class SyncState {
     object Idle : SyncState()
     data class InProgress(val progress: Int, val total: Int, val message: String) : SyncState()
@@ -21,15 +26,26 @@ sealed class SyncState {
 @Singleton
 class SyncManager @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val localDataSource: LocalDataSource
+    private val localDataSource: LocalDataSource,
+    @ApplicationContext private val context: Context
 ) {
+
+    private val syncScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
         private const val TAG = "SyncManager"
-        private const val COLLECTION_PALABRAS = "tu_coleccion"
-        private const val COLLECTION_ORACIONES = "oraciones_coleccion"
+
+        //  NOMBRES ACTUALIZADOS DE COLECCIONES FIREBASE
+        private const val COLLECTION_PALABRAS = "palabras"
+        private const val COLLECTION_ORACIONES = "oraciones_completas"
+
         private const val BATCH_SIZE = 100
     }
+    // ============================================================================
+// VARIABLES DE CLASE EN SyncManager
+// ============================================================================
+    private var palabrasListener: ListenerRegistration? = null
+    private var oracionesListener: ListenerRegistration? = null
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -62,7 +78,7 @@ class SyncManager @Inject constructor(
             val oracionesSynced = oracionesResult.getOrNull() ?: 0
 
             _syncState.value = SyncState.Success(palabrasSynced, oracionesSynced)
-            Log.d(TAG, "Sincronización completada: $palabrasSynced palabras, $oracionesSynced oraciones")
+            Log.d(TAG, "✅ Sincronización completada: $palabrasSynced palabras, $oracionesSynced oraciones")
 
             Result.success(Unit)
 
@@ -101,19 +117,32 @@ class SyncManager @Inject constructor(
     }
 
     /**
-     * Sincroniza palabras desde Firebase
+     * Sincroniza solo palabras NUEVAS desde última sincronización
      */
     private suspend fun syncPalabras(): Result<Int> = withContext(Dispatchers.IO) {
         try {
             _syncState.value = SyncState.InProgress(25, 100, "Descargando palabras...")
 
-            Log.d(TAG, "Descargando palabras desde Firebase...")
+            // 🔴 OBTENER ÚLTIMA FECHA DE SINCRONIZACIÓN
+            val metadata = localDataSource.getSyncMetadata("palabras")
+            val ultimaSync = metadata?.last_sync_timestamp ?: 0L
+
+            Log.d(TAG, "📥 Descargando palabras DESPUÉS de: ${java.util.Date(ultimaSync)}")
+
+            // 🔴 SOLO PALABRAS NUEVAS O MODIFICADAS
             val snapshot = firestore.collection(COLLECTION_PALABRAS)
+                .whereEqualTo("activo", true)
+                .whereGreaterThan("created_at", ultimaSync)  // 🔴 FILTRO INCREMENTAL
                 .get()
                 .await()
 
             val totalPalabras = snapshot.documents.size
-            Log.d(TAG, "Obtenidas $totalPalabras palabras desde Firebase")
+            Log.d(TAG, "📊 Palabras NUEVAS: $totalPalabras")
+
+            if (totalPalabras == 0) {
+                Log.d(TAG, "✅ No hay palabras nuevas")
+                return@withContext Result.success(0)
+            }
 
             _syncState.value = SyncState.InProgress(40, 100, "Procesando palabras...")
 
@@ -121,21 +150,21 @@ class SyncManager @Inject constructor(
                 try {
                     doc.data?.toPalabraEntity(doc.id)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error procesando palabra ${doc.id}: ${e.message}")
+                    Log.w(TAG, "⚠️ Error procesando palabra ${doc.id}: ${e.message}")
                     null
                 }
             }
 
             _syncState.value = SyncState.InProgress(50, 100, "Guardando palabras...")
 
-            // Insertar en batches para mejor rendimiento
+            // 🔴 NO LIMPIAR - Solo insertar/actualizar
             palabrasEntities.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
                 localDataSource.insertPalabras(batch)
                 val progress = 50 + ((index + 1) * 25 / (palabrasEntities.size / BATCH_SIZE + 1))
                 _syncState.value = SyncState.InProgress(
                     progress,
                     100,
-                    "Guardando palabras ${index * BATCH_SIZE}/${palabrasEntities.size}"
+                    "Guardando palabras ${(index + 1) * BATCH_SIZE}/${palabrasEntities.size}"
                 )
             }
 
@@ -144,44 +173,46 @@ class SyncManager @Inject constructor(
                 SyncMetadataEntity(
                     collection_name = "palabras",
                     last_sync_timestamp = System.currentTimeMillis(),
-                    total_records = palabrasEntities.size,
+                    total_records = (metadata?.total_records ?: 0) + palabrasEntities.size,
                     sync_status = "completed"
                 )
             )
 
-            Log.d(TAG, "Sincronización de palabras completada: ${palabrasEntities.size}")
+            Log.d(TAG, "✅ Sincronización incremental: ${palabrasEntities.size} palabras nuevas")
             Result.success(palabrasEntities.size)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error sincronizando palabras", e)
-
-            localDataSource.updateSyncMetadata(
-                SyncMetadataEntity(
-                    collection_name = "palabras",
-                    last_sync_timestamp = System.currentTimeMillis(),
-                    total_records = 0,
-                    sync_status = "error"
-                )
-            )
-
+            Log.e(TAG, "❌ Error sincronizando palabras", e)
             Result.failure(e)
         }
     }
-
     /**
-     * Sincroniza oraciones desde Firebase
+     * Sincroniza solo oraciones NUEVAS desde última sincronización
      */
     private suspend fun syncOraciones(): Result<Int> = withContext(Dispatchers.IO) {
         try {
             _syncState.value = SyncState.InProgress(75, 100, "Descargando oraciones...")
 
-            Log.d(TAG, "Descargando oraciones desde Firebase...")
+            // 🔴 OBTENER ÚLTIMA FECHA DE SINCRONIZACIÓN
+            val metadata = localDataSource.getSyncMetadata("oraciones")
+            val ultimaSync = metadata?.last_sync_timestamp ?: 0L
+
+            Log.d(TAG, "📥 Descargando oraciones DESPUÉS de: ${java.util.Date(ultimaSync)}")
+
+            // 🔴 SOLO ORACIONES NUEVAS O MODIFICADAS
             val snapshot = firestore.collection(COLLECTION_ORACIONES)
+                .whereEqualTo("activo", true)
+                .whereGreaterThan("created_at", ultimaSync)  // 🔴 FILTRO INCREMENTAL
                 .get()
                 .await()
 
             val totalOraciones = snapshot.documents.size
-            Log.d(TAG, "Obtenidas $totalOraciones oraciones desde Firebase")
+            Log.d(TAG, "📊 Oraciones NUEVAS: $totalOraciones")
+
+            if (totalOraciones == 0) {
+                Log.d(TAG, "✅ No hay oraciones nuevas")
+                return@withContext Result.success(0)
+            }
 
             _syncState.value = SyncState.InProgress(85, 100, "Procesando oraciones...")
 
@@ -189,21 +220,21 @@ class SyncManager @Inject constructor(
                 try {
                     doc.data?.toOracionEntity(doc.id)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error procesando oración ${doc.id}: ${e.message}")
+                    Log.w(TAG, "⚠️ Error procesando oración ${doc.id}: ${e.message}")
                     null
                 }
             }
 
             _syncState.value = SyncState.InProgress(90, 100, "Guardando oraciones...")
 
-            // Insertar en batches
+            // 🔴 NO LIMPIAR - Solo insertar/actualizar
             oracionesEntities.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
                 localDataSource.insertOraciones(batch)
                 val progress = 90 + ((index + 1) * 10 / (oracionesEntities.size / BATCH_SIZE + 1))
                 _syncState.value = SyncState.InProgress(
                     progress,
                     100,
-                    "Guardando oraciones ${index * BATCH_SIZE}/${oracionesEntities.size}"
+                    "Guardando oraciones ${(index + 1) * BATCH_SIZE}/${oracionesEntities.size}"
                 )
             }
 
@@ -212,26 +243,16 @@ class SyncManager @Inject constructor(
                 SyncMetadataEntity(
                     collection_name = "oraciones",
                     last_sync_timestamp = System.currentTimeMillis(),
-                    total_records = oracionesEntities.size,
+                    total_records = (metadata?.total_records ?: 0) + oracionesEntities.size,
                     sync_status = "completed"
                 )
             )
 
-            Log.d(TAG, "Sincronización de oraciones completada: ${oracionesEntities.size}")
+            Log.d(TAG, "✅ Sincronización incremental: ${oracionesEntities.size} oraciones nuevas")
             Result.success(oracionesEntities.size)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error sincronizando oraciones", e)
-
-            localDataSource.updateSyncMetadata(
-                SyncMetadataEntity(
-                    collection_name = "oraciones",
-                    last_sync_timestamp = System.currentTimeMillis(),
-                    total_records = 0,
-                    sync_status = "error"
-                )
-            )
-
+            Log.e(TAG, "❌ Error sincronizando oraciones", e)
             Result.failure(e)
         }
     }
@@ -242,7 +263,7 @@ class SyncManager @Inject constructor(
     private fun isDataOutdated(metadata: SyncMetadataEntity?): Boolean {
         if (metadata == null) return true
 
-        val sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000L
+        val sevenDaysInMillis = 6 * 60 * 60 * 1000L
         val timeSinceLastSync = System.currentTimeMillis() - metadata.last_sync_timestamp
 
         return timeSinceLastSync > sevenDaysInMillis
@@ -268,7 +289,7 @@ class SyncManager @Inject constructor(
      */
     suspend fun forceResync(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Forzando resincronización completa...")
+            Log.d(TAG, "🔄 Forzando resincronización completa...")
             localDataSource.clearAllData()
             performFullSync()
         } catch (e: Exception) {
@@ -300,6 +321,194 @@ class SyncManager @Inject constructor(
             SyncStats()
         }
     }
+
+    /**
+     * Inicia listeners en tiempo real para detectar cambios INMEDIATAMENTE
+     * Se ejecuta cuando la app está abierta
+     */
+    fun startRealtimeSync() {
+        Log.d(TAG, "🔄 Iniciando sincronización en tiempo real...")
+
+        // Detener listeners anteriores si existen
+        stopRealtimeSync()
+
+        // Iniciar listener de palabras
+        startPalabrasListener()
+
+        // Iniciar listener de oraciones
+        startOracionesListener()
+    }
+
+    /**
+     * Detiene los listeners (cuando se cierra la app)
+     */
+    fun stopRealtimeSync() {
+        palabrasListener?.remove()
+        oracionesListener?.remove()
+        Log.d(TAG, "🛑 Sincronización en tiempo real detenida")
+    }
+
+    // ============================================================================
+// LISTENER DE PALABRAS
+// ============================================================================
+    private fun startPalabrasListener() {
+        syncScope.launch {
+            try {
+                val metadata = localDataSource.getSyncMetadata("palabras")
+                val ultimaSync = metadata?.last_sync_timestamp ?: 0L
+
+                Log.d(TAG, "👂 Escuchando palabras DESPUÉS de: ${java.util.Date(ultimaSync)}")
+
+                // 🔥 LISTENER EN TIEMPO REAL
+                palabrasListener = firestore.collection(COLLECTION_PALABRAS)
+                    .whereEqualTo("activo", true)
+                    .whereGreaterThan("created_at", ultimaSync)
+                    .addSnapshotListener { snapshot, error ->
+
+                        if (error != null) {
+                            Log.e(TAG, "❌ Error en listener de palabras", error)
+                            return@addSnapshotListener
+                        }
+
+                        if (snapshot == null || snapshot.isEmpty) {
+                            Log.d(TAG, "✅ No hay palabras nuevas")
+                            return@addSnapshotListener
+                        }
+
+                        // Solo procesar documentos MODIFICADOS o AGREGADOS
+                        val cambios = snapshot.documentChanges.filter { change ->
+                            change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED ||
+                                    change.type == com.google.firebase.firestore.DocumentChange.Type.MODIFIED
+                        }
+
+                        if (cambios.isEmpty()) {
+                            return@addSnapshotListener
+                        }
+
+                        Log.d(TAG, "🔥 ${cambios.size} palabras nuevas/modificadas detectadas")
+
+                        // Procesar cambios en background
+                        syncScope.launch(Dispatchers.IO) {
+                            try {
+                                val palabrasNuevas = cambios.mapNotNull { change ->
+                                    try {
+                                        change.document.data.toPalabraEntity(change.document.id)
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Error procesando palabra", e)
+                                        null
+                                    }
+                                }
+
+                                if (palabrasNuevas.isNotEmpty()) {
+                                    localDataSource.insertPalabras(palabrasNuevas)
+
+                                    // Actualizar metadata
+                                    localDataSource.updateSyncMetadata(
+                                        SyncMetadataEntity(
+                                            collection_name = "palabras",
+                                            last_sync_timestamp = System.currentTimeMillis(),
+                                            total_records = (metadata?.total_records ?: 0) + palabrasNuevas.size,
+                                            sync_status = "realtime_updated"
+                                        )
+                                    )
+
+                                    Log.d(TAG, "✅ ${palabrasNuevas.size} palabras sincronizadas en tiempo real")
+                                }
+
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error guardando palabras", e)
+                            }
+                        }
+                    }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error iniciando listener de palabras", e)
+            }
+        }
+    }
+
+    // ============================================================================
+// LISTENER DE ORACIONES
+// ============================================================================
+    private fun startOracionesListener() {
+        syncScope.launch {
+            try {
+                val metadata = localDataSource.getSyncMetadata("oraciones")
+                val ultimaSync = metadata?.last_sync_timestamp ?: 0L
+
+                Log.d(TAG, "👂 Escuchando oraciones DESPUÉS de: ${java.util.Date(ultimaSync)}")
+
+                // 🔥 LISTENER EN TIEMPO REAL
+                oracionesListener = firestore.collection(COLLECTION_ORACIONES)
+                    .whereEqualTo("activo", true)
+                    .whereGreaterThan("created_at", ultimaSync)
+                    .addSnapshotListener { snapshot, error ->
+
+                        if (error != null) {
+                            Log.e(TAG, "❌ Error en listener de oraciones", error)
+                            return@addSnapshotListener
+                        }
+
+                        if (snapshot == null || snapshot.isEmpty) {
+                            Log.d(TAG, "✅ No hay oraciones nuevas")
+                            return@addSnapshotListener
+                        }
+
+                        // Solo procesar cambios reales
+                        val cambios = snapshot.documentChanges.filter { change ->
+                            change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED ||
+                                    change.type == com.google.firebase.firestore.DocumentChange.Type.MODIFIED
+                        }
+
+                        if (cambios.isEmpty()) {
+                            return@addSnapshotListener
+                        }
+
+                        Log.d(TAG, "🔥 ${cambios.size} oraciones nuevas/modificadas detectadas")
+
+                        // Procesar cambios en background
+                        syncScope.launch(Dispatchers.IO) {
+                            try {
+                                val oracionesNuevas = cambios.mapNotNull { change ->
+                                    try {
+                                        change.document.data.toOracionEntity(change.document.id)
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Error procesando oración", e)
+                                        null
+                                    }
+                                }
+
+                                if (oracionesNuevas.isNotEmpty()) {
+                                    localDataSource.insertOraciones(oracionesNuevas)
+
+                                    // Actualizar metadata
+                                    localDataSource.updateSyncMetadata(
+                                        SyncMetadataEntity(
+                                            collection_name = "oraciones",
+                                            last_sync_timestamp = System.currentTimeMillis(),
+                                            total_records = (metadata?.total_records ?: 0) + oracionesNuevas.size,
+                                            sync_status = "realtime_updated"
+                                        )
+                                    )
+
+                                    Log.d(TAG, "✅ ${oracionesNuevas.size} oraciones sincronizadas en tiempo real")
+                                }
+
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error guardando oraciones", e)
+                            }
+                        }
+                    }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error iniciando listener de oraciones", e)
+            }
+        }
+    }
+
+
+
+
 }
 
 data class SyncStats(
@@ -327,3 +536,4 @@ fun Long.toTimeAgo(): String {
         else -> "Hace más de una semana"
     }
 }
+

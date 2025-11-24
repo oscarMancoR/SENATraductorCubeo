@@ -19,7 +19,7 @@ import com.sena.sennova.cubeoTranslator.PrincipalPage.Data.model.local.entity.Sy
         SyncMetadataEntity::class,
         CacheTraduccionApiEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class TranslationDatabase : RoomDatabase() {

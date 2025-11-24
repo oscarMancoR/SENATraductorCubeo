@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.Index
 
+/*
 @Entity(
     tableName = "palabras",
     indices = [
@@ -21,6 +22,26 @@ data class PalabraEntity(
     val frecuencia: Int = 0,
     val confianza: Float = 1.0f,
     val expert_validated: Boolean = true,
+    val created_at: Long = System.currentTimeMillis(),
+    val updated_at: Long = System.currentTimeMillis()
+)*/
+
+@Entity(
+    tableName = "palabras",
+    indices = [
+        Index(value = ["palabra_espanol"]),
+        Index(value = ["palabra_pamie"])
+    ]
+)
+data class PalabraEntity(
+    @PrimaryKey val id: String,
+    val palabra_espanol: String,
+    val palabra_pamie: String,
+    val significado: String?,
+    val tipo_palabra: String?,
+    val activo: Boolean = true,
+    val fuente: String? = null,
+    val confianza: Float = 1.0f,
     val created_at: Long = System.currentTimeMillis(),
     val updated_at: Long = System.currentTimeMillis()
 )

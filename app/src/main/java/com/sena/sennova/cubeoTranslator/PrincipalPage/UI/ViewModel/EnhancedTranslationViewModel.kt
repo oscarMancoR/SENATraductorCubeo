@@ -463,6 +463,7 @@ class EnhancedTranslationViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         translationJob?.cancel()
+        translationRepository.stopRealtimeSync()
         Log.d(TAG, "ViewModel limpiado")
     }
 }

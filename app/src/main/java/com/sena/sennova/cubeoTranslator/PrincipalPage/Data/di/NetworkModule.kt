@@ -17,7 +17,7 @@ import javax.inject.Singleton
 object NetworkModule {
 
     // TODO: Cambiar esta URL cuando tengas el servidor desplegado
-    private const val BASE_URL = "http://10.0.2.2:5000/" // Para emulador Android
+    private const val BASE_URL = "https://unseceded-hatlike-yaretzi.ngrok-free.dev/" // Para emulador Android
     // private const val BASE_URL = "https://tu-servidor.render.com/" // Para producción
 
     @Provides
